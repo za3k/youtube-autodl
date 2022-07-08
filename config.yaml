@@ -1,0 +1,146 @@
+# youtube-autodl is designed to be run periodically, for example by cron. It downloads your favorite youtube channels and playlists, putting them into folders you specify.
+# It's able to put each video in multiple locations, avoiding storing more than one copy on disk or downloading it more than once.
+
+formats:
+    # Formats are ignored by youtube-autodl, but they can be referenced later in the config file.
+    # The formats here are explained in more detail in the youtube-dl man page under OUTPUT TEMPLATE.
+    - &archive "archive/youtube_%(id)s.%(ext)s" # the default config references this format, so don't delete it. if you don't want an archive, instead set options.archive.all=false
+    - &by_playlist "youtube/%(channel)s/%(playlist)s/%(title)s-%(id)s.%(ext)s"
+    - &by_channel "youtube/%(channel)s/all/%(title)s-%(id)s.%(ext)s"
+    - &to_watch "to_watch/%(upload_date)s %(channel)s - %(title)s - %(id)s.%(ext)s"
+    - &to_watch_long "to_watch_long/%(upload_date)s %(channel)s - %(title)s - %(id)s.%(ext)s"
+    - &to_binge "to_binge/%(upload_date)s %(channel)s - %(title)s - %(id)s.%(ext)s"
+options:
+    # All video format paths and other paths are relative to this directory
+    directory: ~/video
+    # Database location (can be safely deleted, cache only)
+    database: "/home/zachary/youtube-auto-dl/.cache.sqlite"
+    # How often should we see if there are new videos to download? We skip playlists checked more recently than this.
+    refresh_period: 3600 # Hourly is OK.
+    # youtube-autodl is designed to download videos forever. to use it as a feed reader instead, modify the section below.
+    archive:
+        # Automatically archive every video to a single master folder, and record it in a database.
+        # Setting options.archive.all=false disables many options in this section
+        all: true
+        directory: "archive" # should match *archive format string
+        format: *archive
+        # Avoid ever downloading a video twice. Recommended because it greatly increases the speed of youtube-autodl. Set to false to disable.
+        # Note: If you delete a video, but download_archive is false, it will be re-downloaded.
+        # Note: If download_archive is set to any value other than false, adding new formats to a playlist or channel will not update old videos.
+        download_archive: "archive/ARCHIVE.txt"
+        # Automatically delete the "master" copy once all other copies are deleted by you. Useful if you usually watch a video and delete it.
+        # options.archive.autodelete=true requires both options.archive.all=true and options.archive.deduplicate=hardlink
+        autodelete: true
+        # Deduplicate should be one of:
+        #  hardlink aka ln     : use the same storage for both files (not supported on FAT)
+        #  symlink  aka ln -sf : makes a symbolic link or "shortcut" to the main file.
+        #  none     aka cp     : copies files. three copies is three times the storage space. not recommended!
+        # 
+        # options.archive.deduplicate=symlink requires options.archive.all=true
+        deduplicate: "hardlink"
+    youtube-dl:
+        # Use youtube-dl or yt-dlp?
+        binary: yt-dlp
+        # Additional arguments to pass to youtube-dl every time it's invoked
+        # This is a good place to add youtube cookies, bandwidth limits, config files, etc
+        always_arguments: []
+        # Additional arguments to pass to youtube-dl when downloading a video
+        video_arguments: ["--add-metadata", "--all-subs", "--embed-subs"]
+        # Additional arguments to pass to youtube-dl when getting the list of videos from a playlist, channel, search
+        playlist_arguments: []
+watchlist:
+    # channel, playlist, video are all valid options. 'search' is planned but doesn't work yet.
+    # in addition, youtube-dl options can be given (ex. video must be longer than or shorter than X)
+    - name: Applied Science
+      channel: https://www.youtube.com/user/bkraz333
+      note: Ben Krasnow
+      save: [*archive, *by_channel, *to_watch] # *archive doesn't do anything because options.archive.all=true adds it anyway. it's here for me as a reminder.
+    - name: bdg
+      channel: https://www.youtube.com/c/briandavidgilbert
+      note: Brian David Gilbert
+      save: [*archive, *by_channel, *to_watch]
+    - name: BDoubleO100
+      channel: https://www.youtube.com/c/bdoubleo
+      save: [*archive, *by_channel, *to_watch]
+    - name: Ben Eater
+      channel: https://www.youtube.com/user/eaterbc
+      save: [*archive, *by_channel, *to_watch]
+      save_playlists: [*by_playlist]
+    - name: Binging With Babbish
+      playlist: https://www.youtube.com/watch?v=ek5OogQFaAg&list=PLopY4n17t8RCqmupsW66yOsR5eDPRUN_y
+      save: [*archive, *by_playlist, *to_binge]
+    - name: Br0dyman
+      channel: https://www.youtube.com/c/Br0dyman
+      save: [*archive, *by_channel]
+    - name: CodysLab
+      channel: https://www.youtube.com/user/theCodyReeder
+      save: [*archive, *by_channel, *to_watch]
+    - name: EthosLab
+      channel: https://www.youtube.com/user/EthosLab
+      save: [*archive, *by_channel, *to_watch]
+      save_playlists: [*by_playlist]
+    - name: Drawfee
+      channel: https://www.youtube.com/c/Drawfee
+      save: [*archive, *by_channel, *to_watch]
+    - name: DrawfeeExtra
+      channel: https://www.youtube.com/channel/UCpKaZzU4K8X6i-9TXkiRikA
+      save: [*archive, *by_channel]
+    - name: docm77
+      channel: https://www.youtube.com/c/docm77
+      save: [*archive, *by_channel, *to_watch]
+    - name: EvilNotion
+      channel: https://www.youtube.com/c/EvilNotion
+      save: [*archive, *by_channel]
+    - name: GamingOnCaffeine
+      channel: https://www.youtube.com/user/GamingOnCaffeine
+      save: [*archive, *by_channel]
+      save_playlists: [*by_playlist]
+    - name: Grian
+      channel: https://www.youtube.com/c/Grian
+      save: [*archive, *by_channel, *to_watch]
+    - name: ImpAndSkizz
+      channel: https://www.youtube.com/c/ImpAndSkizz
+      save: [*archive, *by_channel, *to_watch]
+      save_playlists: [*by_playlist]
+    - name: Jessassin
+      channel: https://www.youtube.com/user/TheJessassin
+      save: [*archive, *by_channel, *to_watch]
+    - name: NikAndIsaac
+      channel: https://www.youtube.com/c/NikAndIsaac
+      save: [*archive, *by_channel, *to_watch_long]
+      save_playlists: [*by_playlist]
+    - name: Primitive Technology
+      channel: https://www.youtube.com/channel/UCAL3JXZSzSm8AlZyD3nQdBA
+      save: [*archive, *by_channel, *to_watch]
+    - name: ProZD
+      channel: https://www.youtube.com/user/ProZD
+      save: [*archive, *by_channel, *to_watch]
+    - name: Skizzleman
+      channel: https://www.youtube.com/user/MCSkizzleman
+      save: [*archive, *by_channel, *to_watch]
+    - name: SSS
+      channel: https://www.youtube.com/c/UnofficialSecretSleepoverSociety
+      save: [*archive, *by_channel, *to_watch_long]
+    - name: TangoTek
+      channel: https://www.youtube.com/user/TangoTekLP
+      save: [*archive, *by_channel, *to_watch]
+    - name: TangoTek2
+      channel: https://www.youtube.com/c/TangoTek2
+      save: [*archive, *by_channel, *to_watch_long]
+    - name: VintageBeef
+      channel: https://www.youtube.com/user/VintageBeef
+      save: [*archive, *by_channel, *to_watch]
+    - name: WillieMuse
+      channel: https://www.youtube.com/c/WillieMuse2
+      save: [*archive, *by_channel, *to_watch_long]
+    - name: ZedaphPlays
+      channel: https://www.youtube.com/c/ZedaphPlays
+      save: [*archive, *by_channel, *to_watch]
+    - name: Zero Punctuation
+      playlist: https://www.youtube.com/playlist?list=PLAbMhAYRuCUhawCEV2oXZGrienoKTN16X
+      save: [*archive, *by_playlist, *to_binge]
+    # Searches don't really work yet.
+    #- name: Jan 6 Hearings
+    #  channel: https://www.youtube.com/c/PBSNewsHour
+    #  yt_dl_args: ["--match-title", "Jan. 6 Committee"]
+    #  save: [*archive, *by_channel, *to_watch]
