@@ -1,10 +1,9 @@
 #!/usr/bin/python3
-import asyncio, copy, os, sqlitedict, subprocess, time, yaml
+import asyncio, copy, os, re, sqlitedict, subprocess, sys, time, yaml
 
-# TODO: progress bar
-# TODO: progress bar per-channel
-# TODO: Fix / in exec by having a custom shell script. No idea what to do with quotes still. Maybe the only long-term solution is multiple runs of youtube-dl, one per filename? Ugh.
-# TODO: If they add change formats, we could suppport copying stuff after the fact? We have the cached save locations.
+# TODO: progress bar?
+# TODO: progress bar per-channel?
+# TODO: Support reading URLs from a plaintext file in the config
 
 # Cache web fetches
 class SqliteExpiringCache():
@@ -90,7 +89,6 @@ class AutoDownloader():
         while not self.download_queue.empty():
             task = await self.download_queue.get()
             await task
-            import sys; sys.exit(0) # for testing purposes, download only one video per run
     async def _download_watchlist_item(self, name=None, channel=None, playlist=None, search=None, video=None, save=None, note=None, save_playlists=None, yt_dl_args=[], **kwargs):
         assert len(kwargs) == 0
 
@@ -110,7 +108,7 @@ class AutoDownloader():
         elif search:
             await self.download_search(search, **kwargs)
         elif video:
-            await self.download_video(video, **kwargs)
+            await self.queue_download_video(video, **kwargs)
 
     async def download_playlist(self, playlist_url, **kwargs):
         await self.download_videos("playlist", playlist_url, **kwargs)
@@ -120,16 +118,16 @@ class AutoDownloader():
 
         # Also download all the playlists for the channel
         if save_playlists is not None:
+            tasks = []
             for playlist_url in await self.get_playlists_for_channel(channel_url, **kwargs):
                 #print("Discovered {} playlist: {}".format(kwargs.get("name"), playlist_url))
-                pass
-            #    kwargs2 = copy.copy(kwargs)
-            #    kwargs2["save"] = save_playlists
-            #    kwargs2["name"] = "{} ({})".format(name, playlist_id)
-            #    tasks.append(self._get_urls_for(playlist_url, **kwargs2))
-            #await asyncio.gather(*tasks)
+                kwargs2 = copy.copy(kwargs)
+                kwargs2["save"] = save_playlists
+                kwargs2["name"] = "{} ({})".format(kwargs.get("name"), playlist_url)
+                tasks.append(self._get_urls_for("playlist", playlist_url, **kwargs2))
+            await asyncio.gather(*tasks)
     async def get_playlists_for_channel(self, channel_url, **kwargs):
-        playlists_url = channel_url + "/playlists"
+        playlists_url = channel_url + "/playlists?view=1" # Just playlists, not
         item_urls = await self._get_urls_for("channel_playlist", playlists_url, ignore_failure=True, **kwargs) # A transient failure
         if item_urls is None or len(item_urls) == 0:
             print("Failed to download playlists for channel: ", name)
@@ -137,12 +135,12 @@ class AutoDownloader():
         tasks = []
         playlists = []
         for item_url in item_urls:
-            # Might be a shelf:    https://www.youtube.com/c/ImpAndSkizz/playlists?view=1&sort=dd&shelf_id=0
             if "shelf_id=" in item_url and "/playlists" in item_url:
+                # Might be a shelf:    https://www.youtube.com/c/ImpAndSkizz/playlists?view=1&sort=dd&shelf_id=0
                 #print("Discovered shelf: ", item_url)
                 tasks.append(self.get_playlists_for_shelf(item_url, **kwargs))
-            # Might be a playlist: https://www.youtube.com/playlist?list=PLt673TcEuoVz1o5qyUV4MpYtW8jt-5t1p
             elif "list=" in item_url:
+                # Might be a playlist: https://www.youtube.com/playlist?list=PLt673TcEuoVz1o5qyUV4MpYtW8jt-5t1p
                 playlists.append(item_url)
         results = await asyncio.gather(*tasks)
         for playlist_urls in results:
@@ -173,7 +171,7 @@ class AutoDownloader():
         return result
     async def _fetch_urls_for(self, url_type, url, ignore_failure=False, **kwargs):
         assert url_type is not None
-        print("Fetching the list of items from {}: {}".format(url_type,  kwargs.get("name", url)))
+        print("Updating {}: {}".format(url_type,  kwargs.get("name", url)))
         if url_type in ["channel", "channel_playlist", "shelf", "playlist"]:
             # --flat-playlist is MUCH faster than --skip-download
             command = [self.binary, "--flat-playlist", "--print", "url", "-s", url] + self.playlist_arguments
@@ -184,7 +182,7 @@ class AutoDownloader():
             assert False, "Wrong type {} for: {}".format(url_type, url)
         exit_code, stdout, stderr = await self.run(command)
         if exit_code == 0 or ignore_failure:
-            print("Fetched the list of items from {}: {}".format(url_type, kwargs.get("name", url)))
+            print("Updated {}: {}".format(url_type, kwargs.get("name", url)))
             lines = [x.strip() for x in stdout.decode('ascii').split("\n")]
             ids = [line.strip() for line in lines if line != "NA" and line != ""]
             if len(ids) > 0:
@@ -192,7 +190,6 @@ class AutoDownloader():
         else:
             print("fetch_list failed for {}: {}".format(url_type, kwargs.get("name", url)))
             print(" ".join(command))
-            #print(stdout.decode('utf8')
             print(stderr.decode('utf8'))
     async def run(self, command):
         process = await asyncio.create_subprocess_exec(
@@ -205,37 +202,42 @@ class AutoDownloader():
         return exit_code, output, err
 
     async def queue_download_video(self, video_url, **kwargs):
-        if video_url not in self.downloaded_videos:
-            await self.download_queue.put(self.download_video(video_url, **kwargs))
+        if video_url in self.downloaded_videos:
+            master_filepath = self.cache.get("video_path " + video_url)
+            if master_filepath is not None and os.path.exists(master_filepath):
+                return
+        await self.download_queue.put(self.download_video(video_url, **kwargs))
 
     async def download_video(self, video_url, **kwargs):
         formats = [] # List of formats. First is the "primary" version for symlink purposes.
         for save_format in kwargs.get("save", []):
             if save_format not in formats:
                 formats.append(save_format)
-
-        command = [self.binary]
-        command += ["--no-progress"] 
         if self.archive_all:
             if self.archive_format in formats:
                 formats.remove(self.archive_format)
-            formats = [self.archive_format] + formats # archive master is always the primary one
+            file_format, additional_formats = self.archive_format, formats
+        else:
+            file_format, additional_formats = formats[0], formats[1:]
+
+        command = [self.binary]
+        command += ["--no-progress"] 
         if self.download_archive:
             command += ["--download-archive", self.download_archive]
-        command += ["-o", formats[0]] # primary format
-        for additional_format in formats[1:]:
-            copier = { # TODO: Should this delete stuff (-f)?
-                "none": "cp -f",
-                "symlink": "ln -sf",
-                "hardlink": "ln -f",
-            }[self.deduplicate]
-            command += ["--exec", 'echo "{}" | xargs -IXXX dirname XXX | xargs -IXXX mkdir -p XXX'.format(additional_format)]
-            command += ["--exec", '{} "%(filepath)s" "{}"'.format(copier, additional_format)]
+        command += ["-o", file_format]
+        for additional_format in additional_formats:
+            # We can't combined %(template)S and %(template)q
+            # And indeed, we might not want full sanitization.
+            # Instead, we write {{%(title)q}}s
+            # Then we pass {{weird title/whatever}}s to ourselves, which strips out characters such as / we don't want in the filename
+            magic_format = re.sub("%\(([a-z]+)\)([sSq])", r"{{%(\1)q}}\2", additional_format)
+            # OK but we also need to fix all the stuff not inside a string..? For now just special-case some stuff.
+            magic_format = magic_format.replace(" ", "\\ ")
+            command += ["--exec", '"{}" --deduplicate {} %(filepath)q {}'.format(sys.argv[0], self.deduplicate, magic_format)]
         command += self.video_arguments
+        command += ["-q", "--exec", "echo"] # record the saved master file
         command += [video_url]
-        command += ["-q", "--exec", "echo"]
 
-        #print(" ".join(command))
         print("Downloading for {}: {}".format(kwargs.get("name"), video_url))
         exit_code, stdout, stderr = await self.run(command)
         filepath = stdout.decode("utf8").strip("\n")
@@ -243,11 +245,38 @@ class AutoDownloader():
             print(stdout.decode('utf8'))
             print(stderr.decode('utf8'))
             return
+
         self.downloaded_videos.add(video_url)
         self.cache.put("downloaded_videos", self.downloaded_videos)
-        self.cache.put("video_path " + video_url, filepath) # remember where it was downloaded to
+        # This fails if ARCHIVE.txt has the ID before youtube-autodl knows about it
+        self.cache.put("video_path " + video_url, filepath) # remember where it was downloaded to, and skip if it's present next time
 
-yadl = AutoDownloader("/home/zachary/youtube-auto-dl/config.yaml")
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
-loop.run_until_complete(yadl.run_once())
+if __name__ == "__main__":
+    if len(sys.argv) == 1:
+        yadl = AutoDownloader("/home/zachary/youtube-autodl/config.yaml")
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(yadl.run_once())
+    elif sys.argv[1:2] == ["--deduplicate"] and len(sys.argv) == 5:
+        deduplicate_method, master_filepath, magic_string = sys.argv[2:]
+
+        def replace_magic(magic_bit):
+            middle, formatter = magic_bit.group(1), magic_bit.group(2)
+            # TODO: if formatter is S, sanitize. Also, deal with #S.
+            return middle.replace("/", "_")
+        target_filepath = re.sub("{{(.*?)}}([sSq])", replace_magic, magic_string)
+
+        target_dir = os.path.dirname(target_filepath)
+        os.makedirs(target_dir, exist_ok=True)
+
+        copier = { # TODO: Should this delete stuff (-f)?
+            "none": ["cp", "-f"],
+            "symlink": ["ln", "-sf"],
+            "hardlink": ["ln", "-f"],
+        }[deduplicate_method]
+        command = copier + [master_filepath, target_filepath]
+        subprocess.run(command)
+    else:
+        assert False, "Run with no arguments, please. {}".format(sys.argv)
+        print(sys.argv)
+        sys.exit(1)

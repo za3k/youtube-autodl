@@ -20,3 +20,9 @@ Features:
 - By default, **youtube-autodl** stores only one actual copy of each file on disk, even if you want the file saved multiple places. Deduplication can be configured to use symlinks, hardlinks, or be turned off.
 - Manually specify any youtube-dl options that are missing, either globally or for each playlist.
 - yt-dlp support
+
+### About
+
+youtube-dlp is written by Zachary "za3k" Vance. It released into the public domain.
+
+Special thanks to the yt-dlp maintainers, who in addition to writing excellent software, took time to answer my many questions.
