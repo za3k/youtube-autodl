@@ -21,6 +21,20 @@ Features:
 - Manually specify any youtube-dl options that are missing, either globally or for each playlist.
 - yt-dlp support
 
+### Installation
+
+**youtube-autodl** requires yt-dlp. In addition, install the following python packages: sqlitedict
+
+## FAQ
+
+Q: I want to re-organize my existing downloads. I hate how I set up folders!
+A: You turned on the archive, right? Delete the database (.cache.sqlite), archive/ARCHIVE.txt, and all of youtube-dl's folders *except* the archive. Run youtube-autodl again. It will take a little bit to grab the metadata again, but it should re-organize everything.
+
+Q: I already have a ton of downloaded videos. How do I avoid downloading them again when I start using youtube-autodl?
+A: 
+ - If you just want to avoid downloading them again, set up or share an ARCHIVE.txt file. The easiest way to do this is to use `youtube-dl --download-archive ARCHIVE.txt` when downloading them in the first place. If you didn't do that, you can probably make one for existing video folders with a bash one-liner and some cleverness.
+ - If you want youtube-autodl to actively know about existing videos and make organized copies, set `formats.archive` to point to your existing videos. This way, youtube-dl will see your videos as its "master" copy, and simply realize they're downloaded already. (Note, this means youtube-autodl will add new videos to your existing collection when they are downloaded.)
+
 ### About
 
 youtube-dlp is written by Zachary "za3k" Vance. It released into the public domain.
