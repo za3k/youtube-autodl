@@ -35,6 +35,9 @@ A:
  - If you just want to avoid downloading them again, set up or share an ARCHIVE.txt file. The easiest way to do this is to use `youtube-dl --download-archive ARCHIVE.txt` when downloading them in the first place. If you didn't do that, you can probably make one for existing video folders with a bash one-liner and some cleverness.
  - If you want youtube-autodl to actively know about existing videos and make organized copies, set `formats.archive` to point to your existing videos. This way, youtube-dl will see your videos as its "master" copy, and simply realize they're downloaded already. (Note, this means youtube-autodl will add new videos to your existing collection when they are downloaded.)
 
+Q: Help! I checked my computer and there are a dozen copies of youtube-dl running.
+A: You probably made an hourly cronjob for youtube-autodl. youtube-autodl is being started every hour, whether or not the previous instance finished. Kill all the existing processes. Then, do an initial download before adding it to cron. You can also add [flock](https://linux.die.net/man/1/flock) to your cron tab, to prevent a second instance from starting before your first one finishes.
+
 ### About
 
 youtube-dlp is written by Zachary "za3k" Vance. It released into the public domain.
