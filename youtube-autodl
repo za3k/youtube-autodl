@@ -1,9 +1,8 @@
 #!/usr/bin/python3
-import asyncio, copy, os, re, sqlitedict, subprocess, sys, time, yaml
+import asyncio, copy, os, re, sqlitedict, subprocess, sys, time, tqdm, yaml
 
-# TODO: progress bar?
-# TODO: progress bar per-channel?
 # TODO: Support reading URLs from a plaintext file in the config
+# TODO: Switch from crazy --exec method to just calling youtube-dl multiple times and printing each output filename. This will also avoid a hard dependency on yt-dlp
 
 # Cache web fetches
 class SqliteExpiringCache():
@@ -49,7 +48,7 @@ class AutoDownloader():
         
         # Non-config initialization
         self.cache = SqliteExpiringCache(self.cache_path)
-        self.download_queue = asyncio.Queue()
+        self.download_queue = []
         self.downloaded_videos = self.cache.get("downloaded_videos") or set()
         if self.download_archive:
             try:
@@ -61,6 +60,8 @@ class AutoDownloader():
             self.downloaded_video_ids = set()
 
 
+    def print(self, s):
+        tqdm.tqdm.write(s)
     def verify_config(self):
         pass # Figure out how to do this declaratively. Until then skip it.
 
@@ -78,16 +79,23 @@ class AutoDownloader():
             if file.name == os.path.basename(self.download_archive): # Don't delete ARCHIVE.txt
                 continue
             if file.stat(follow_symlinks=False).st_nlink == 1:
-                print("Auto-deleting: ", file.path)
+                self.print("Auto-deleting: ", file.path)
                 os.unlink(file.path)
 
+    @staticmethod
+    async def as_completed_with_concurrency(n, tasks):
+        semaphore = asyncio.Semaphore(n)
+        async def sem_task(task):
+            async with semaphore:
+                return await task
+        return asyncio.as_completed([sem_task(t) for t in tasks])
     async def download(self):
         # Grab list of videos, QUEUE them but don't download yet
         await asyncio.gather(*[self._download_watchlist_item(**watchlist_item) for watchlist_item in self.config["watchlist"]])
         # OK, download videos.
-        print("Videos queued for download: ", self.download_queue.qsize())
-        while not self.download_queue.empty():
-            task = await self.download_queue.get()
+        self.print("Videos queued for download: {}".format(len(self.download_queue)))
+
+        for task in tqdm.tqdm(list(await self.as_completed_with_concurrency(3, self.download_queue))):
             await task
     async def _download_watchlist_item(self, name=None, channel=None, playlist=None, search=None, video=None, save=None, note=None, save_playlists=None, yt_dl_args=[], **kwargs):
         assert len(kwargs) == 0
@@ -128,9 +136,9 @@ class AutoDownloader():
             await asyncio.gather(*tasks)
     async def get_playlists_for_channel(self, channel_url, **kwargs):
         playlists_url = channel_url + "/playlists?view=1" # Just playlists, not
-        item_urls = await self._get_urls_for("channel_playlist", playlists_url, ignore_failure=True, **kwargs) # A transient failure
+        item_urls = await self._get_urls_for("channel_playlists", playlists_url, ignore_failure=True, **kwargs) # A transient failure
         if item_urls is None or len(item_urls) == 0:
-            print("Failed to download playlists for channel: ", name)
+            self.print("Failed to download playlists for channel: {}".format(name))
             return []
         tasks = []
         playlists = []
@@ -156,6 +164,7 @@ class AutoDownloader():
         video_urls = await self._get_urls_for(url_type, url, **kwargs)
         if video_urls is not None:
             #print("list of videos from {} {}: {}".format(url_type, kwargs.get("name", url), [len(video_ids)]+video_ids[:10]))
+            video_urls.sort() # Deal with old stuff
             await asyncio.gather(*(self.queue_download_video(video_url, **kwargs) for video_url in video_urls))
 
     async def _get_urls_for(self, url_type, url, ignore_failure=False, **kwargs):
@@ -171,8 +180,8 @@ class AutoDownloader():
         return result
     async def _fetch_urls_for(self, url_type, url, ignore_failure=False, **kwargs):
         assert url_type is not None
-        print("Updating {}: {}".format(url_type,  kwargs.get("name", url)))
-        if url_type in ["channel", "channel_playlist", "shelf", "playlist"]:
+        self.print("Updating {}: {}".format(url_type,  kwargs.get("name", url)))
+        if url_type in ["channel", "channel_playlists", "shelf", "playlist"]:
             # --flat-playlist is MUCH faster than --skip-download
             command = [self.binary, "--flat-playlist", "--print", "url", "-s", url] + self.playlist_arguments
         elif url_type in ["search"]:
@@ -182,15 +191,16 @@ class AutoDownloader():
             assert False, "Wrong type {} for: {}".format(url_type, url)
         exit_code, stdout, stderr = await self.run(command)
         if exit_code == 0 or ignore_failure:
-            print("Updated {}: {}".format(url_type, kwargs.get("name", url)))
+            self.print("Updated {}: {}".format(url_type, kwargs.get("name", url)))
             lines = [x.strip() for x in stdout.decode('ascii').split("\n")]
             ids = [line.strip() for line in lines if line != "NA" and line != ""]
+            ids.sort()
             if len(ids) > 0:
                 return ids
         else:
-            print("fetch_list failed for {}: {}".format(url_type, kwargs.get("name", url)))
-            print(" ".join(command))
-            print(stderr.decode('utf8'))
+            self.print("fetch_list failed for {}: {}".format(url_type, kwargs.get("name", url)))
+            self.print(" ".join(command))
+            self.print(stderr.decode('utf8'))
     async def run(self, command):
         process = await asyncio.create_subprocess_exec(
             *command, 
@@ -206,7 +216,7 @@ class AutoDownloader():
             master_filepath = self.cache.get("video_path " + video_url)
             if master_filepath is not None and os.path.exists(master_filepath):
                 return
-        await self.download_queue.put(self.download_video(video_url, **kwargs))
+        self.download_queue.append(self.download_video(video_url, **kwargs))
 
     async def download_video(self, video_url, **kwargs):
         formats = [] # List of formats. First is the "primary" version for symlink purposes.
@@ -238,12 +248,12 @@ class AutoDownloader():
         command += ["-q", "--exec", "echo"] # record the saved master file
         command += [video_url]
 
-        print("Downloading for {}: {}".format(kwargs.get("name"), video_url))
+        self.print("Downloading for {}: {}".format(kwargs.get("name"), video_url))
         exit_code, stdout, stderr = await self.run(command)
         filepath = stdout.decode("utf8").strip("\n")
         if exit_code != 0:
-            print(stdout.decode('utf8'))
-            print(stderr.decode('utf8'))
+            self.print(stdout.decode('utf8'))
+            self.print(stderr.decode('utf8'))
             return
 
         self.downloaded_videos.add(video_url)
@@ -278,5 +288,5 @@ if __name__ == "__main__":
         subprocess.run(command)
     else:
         assert False, "Run with no arguments, please. {}".format(sys.argv)
-        print(sys.argv)
+        self.print(sys.argv)
         sys.exit(1)
