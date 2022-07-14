@@ -120,7 +120,7 @@ class AutoDownloader():
         elif search:
             await self.download_search(search, **kwargs)
         elif video:
-            await self.queue_download_video("video", video, **kwargs)
+            await self.queue_download_video(video, **kwargs)
 
     async def download_playlist(self, playlist_url, **kwargs):
         await self.download_videos("playlist", playlist_url, **kwargs)
@@ -169,7 +169,7 @@ class AutoDownloader():
         if video_urls is not None:
             #print("list of videos from {} {}: {}".format(url_type, kwargs.get("name", url), [len(video_ids)]+video_ids[:10]))
             video_urls.sort() # Deal with old stuff
-            await asyncio.gather(*(self.queue_download_video(url_type, video_url, **kwargs) for video_url in video_urls))
+            await asyncio.gather(*(self.queue_download_video(video_url, **kwargs) for video_url in video_urls))
 
     async def _get_urls_for(self, url_type, url, ignore_failure=False, **kwargs):
         # Caching (and no retries) layer over _fetch_urls_for
