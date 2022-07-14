@@ -3,6 +3,7 @@ import asyncio, copy, os, re, sqlitedict, subprocess, sys, time, tqdm, yaml
 
 # TODO: Support reading URLs from a plaintext file in the config
 # TODO: Switch from crazy --exec method to just calling youtube-dl multiple times and printing each output filename. This will also avoid a hard dependency on yt-dlp
+# TODO: Remove ARCHIVE.txt support if needed after dropping --exec. It breaks channel_playlists support.
 
 # Cache web fetches
 class SqliteExpiringCache():
@@ -31,6 +32,9 @@ class AutoDownloader():
         self.directory = os.path.expanduser(self.config["options"]["directory"])
         self.cache_path = os.path.join(self.directory, os.path.expanduser(self.config["options"]["database"]))
         self.refresh_period = self.config["options"]["refresh_period"]
+        self.download_threads = self.config["options"].get("download_threads", "auto")
+        if self.download_threads == "auto":
+            self.download_threads = 12
 
         self.archive_all = self.config["options"]["archive"]["all"]
         self.archive_directory = os.path.join(self.directory, os.path.expanduser(self.config["options"]["archive"]["directory"]))
@@ -95,8 +99,8 @@ class AutoDownloader():
         # OK, download videos.
         self.print("Videos queued for download: {}".format(len(self.download_queue)))
 
-        for task in tqdm.tqdm(list(await self.as_completed_with_concurrency(3, self.download_queue))):
-            await task
+        async for result in tqdm.tqdm(list(await self.as_completed_with_concurrency(self.download_threads, self.download_queue))):
+            pass
     async def _download_watchlist_item(self, name=None, channel=None, playlist=None, search=None, video=None, save=None, note=None, save_playlists=None, yt_dl_args=[], **kwargs):
         assert len(kwargs) == 0
 
@@ -116,7 +120,7 @@ class AutoDownloader():
         elif search:
             await self.download_search(search, **kwargs)
         elif video:
-            await self.queue_download_video(video, **kwargs)
+            await self.queue_download_video("video", video, **kwargs)
 
     async def download_playlist(self, playlist_url, **kwargs):
         await self.download_videos("playlist", playlist_url, **kwargs)
@@ -165,7 +169,7 @@ class AutoDownloader():
         if video_urls is not None:
             #print("list of videos from {} {}: {}".format(url_type, kwargs.get("name", url), [len(video_ids)]+video_ids[:10]))
             video_urls.sort() # Deal with old stuff
-            await asyncio.gather(*(self.queue_download_video(video_url, **kwargs) for video_url in video_urls))
+            await asyncio.gather(*(self.queue_download_video(url_type, video_url, **kwargs) for video_url in video_urls))
 
     async def _get_urls_for(self, url_type, url, ignore_failure=False, **kwargs):
         # Caching (and no retries) layer over _fetch_urls_for
@@ -232,7 +236,7 @@ class AutoDownloader():
 
         command = [self.binary]
         command += ["--no-progress"] 
-        if self.download_archive:
+        if False: #self.download_archive and url_type != "playlist":
             command += ["--download-archive", self.download_archive]
         command += ["-o", file_format]
         for additional_format in additional_formats:
