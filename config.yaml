@@ -10,15 +10,18 @@ formats:
     - &to_watch "to_watch/%(upload_date)s %(channel)s - %(title)s - %(id)s.%(ext)s"
     - &to_watch_long "to_watch_long/%(upload_date)s %(channel)s - %(title)s - %(id)s.%(ext)s"
     - &to_binge "to_binge/%(upload_date)s %(channel)s - %(title)s - %(id)s.%(ext)s"
-    - &testing "testing_unsanitary/%(title)s.%(ext)s"
-    - &testing_sanitary "testing_sanitary/%(title)S.%(ext)s"
+    #- &testing "testing_unsanitary/%(title)s.%(ext)s"
+    #- &testing_sanitary "testing_sanitary/%(title)S.%(ext)s"
 options:
     # All video format paths and other paths are relative to this directory
-    directory: ~/video
+    directory: /data/video/youtube-autodl
     # Database location (can be safely deleted, cache only)
-    database: "/home/zachary/youtube-autodl/.cache.sqlite"
+    database: ".cache.sqlite"
     # How often should we see if there are new videos to download? We skip playlists checked more recently than this.
     refresh_period: 3600 # Hourly is OK.
+    # How many video downloads to do at once? ("auto" to let youtube-autodl decide for you)
+    # Metadata updates are always done with as many downloads as possible.
+    download_threads: "auto"
     # youtube-autodl is designed to download videos forever. to use it as a feed reader instead, modify the section below.
     archive:
         # Automatically archive every video to a single master folder, and record it in a database.
@@ -53,18 +56,18 @@ options:
 watchlist:
     # channel, playlist, video are all valid options. 'search' is planned but doesn't work yet.
     # in addition, youtube-dl options can be given (ex. video must be longer than or shorter than X)
-    - name: Single quote
-      video: https://www.youtube.com/watch?v=yFqFLo_bYq0
-      save: [*testing, *testing_sanitary]
-    - name: Forward slash
-      video: https://www.youtube.com/watch?v=8P-kVeviv10
-      save: [*testing, *testing_sanitary]
-    - name: Double quotes
-      video: https://www.youtube.com/watch?v=q5lJ4x68vdw
-      save: [*testing, *testing_sanitary]
-    - name: Unicode
-      video: https://www.youtube.com/shorts/396_3HvvkNc
-      save: [*testing, *testing_sanitary]
+    #- name: Single quote
+    #  video: https://www.youtube.com/watch?v=yFqFLo_bYq0
+    #  save: [*testing, *testing_sanitary]
+    #- name: Forward slash
+    #  video: https://www.youtube.com/watch?v=8P-kVeviv10
+    #  save: [*testing, *testing_sanitary]
+    #- name: Double quotes
+    #  video: https://www.youtube.com/watch?v=q5lJ4x68vdw
+    #  save: [*testing, *testing_sanitary]
+    #- name: Unicode
+    #  video: https://www.youtube.com/shorts/396_3HvvkNc
+    #  save: [*testing, *testing_sanitary]
 
     - name: Applied Science
       channel: https://www.youtube.com/user/bkraz333
