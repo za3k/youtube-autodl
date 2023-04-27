@@ -99,8 +99,8 @@ class AutoDownloader():
         # OK, download videos.
         self.print("Videos queued for download: {}".format(len(self.download_queue)))
 
-        async for result in tqdm.tqdm(list(await self.as_completed_with_concurrency(self.download_threads, self.download_queue))):
-            pass
+        for task in tqdm.tqdm(list(await self.as_completed_with_concurrency(self.download_threads, self.download_queue))):
+            await task
     async def _download_watchlist_item(self, name=None, channel=None, playlist=None, search=None, video=None, save=None, note=None, save_playlists=None, yt_dl_args=[], **kwargs):
         assert len(kwargs) == 0
 
